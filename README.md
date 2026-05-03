@@ -1,5 +1,7 @@
 # CS175-AI2-THOR
 
+[中文 README](README.zh-CN.md)
+
 Object-goal navigation experiments in AI2-THOR / ProcTHOR for CS 175.
 
 The project compares:
