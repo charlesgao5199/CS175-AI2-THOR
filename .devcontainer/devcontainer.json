@@ -1,0 +1,30 @@
+{
+  "name": "CS175 AI2-THOR ObjectNav",
+  "build": {
+    "context": "..",
+    "dockerfile": "../docker/Dockerfile"
+  },
+  "workspaceFolder": "/workspaces/CS175-AI2-THOR",
+  "runArgs": [
+    "--shm-size=8g"
+  ],
+  "containerEnv": {
+    "AI2THOR_CACHE_DIR": "/workspaces/CS175-AI2-THOR/.ai2thor-cache",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/conda/envs/ai2thor-objectnav/bin/python",
+        "python.terminal.activateEnvironment": true,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "postCreateCommand": "python --version && python -m pip --version"
+}
