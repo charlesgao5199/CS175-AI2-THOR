@@ -8,8 +8,10 @@
   "runArgs": [
     "--shm-size=8g"
   ],
+  "mounts": [
+    "source=${localWorkspaceFolder}/.ai2thor-cache,target=/home/mambauser/.ai2thor,type=bind"
+  ],
   "containerEnv": {
-    "AI2THOR_CACHE_DIR": "/workspaces/CS175-AI2-THOR/.ai2thor-cache",
     "PYTHONUNBUFFERED": "1"
   },
   "customizations": {

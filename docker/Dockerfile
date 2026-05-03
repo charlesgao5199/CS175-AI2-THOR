@@ -31,9 +31,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     libxrender1 \
     libxtst6 \
+    mesa-vulkan-drivers \
     mesa-utils \
     procps \
     unzip \
+    vulkan-tools \
     wget \
     x11-utils \
     xvfb \
@@ -48,7 +50,6 @@ ENV CONDA_DEFAULT_ENV=ai2thor-objectnav
 ENV PATH=/opt/conda/envs/ai2thor-objectnav/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV AI2THOR_CACHE_DIR=/workspaces/CS175-AI2-THOR/.ai2thor-cache
 
 USER $MAMBA_USER
 WORKDIR /workspaces/CS175-AI2-THOR

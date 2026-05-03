@@ -46,10 +46,24 @@ After the container opens, run:
 python scripts/smoke_test_ai2thor.py
 ```
 
+For one-off `docker run` checks outside VS Code, mount the AI2-THOR release cache
+explicitly so the Unity build is not downloaded every time:
+
+```powershell
+New-Item -ItemType Directory -Force .ai2thor-cache
+docker run --rm --shm-size=8g -v "${PWD}:/workspaces/CS175-AI2-THOR" -v "${PWD}\.ai2thor-cache:/home/mambauser/.ai2thor" cs175-ai2thor-dev xvfb-run -a python scripts/smoke_test_ai2thor.py --platform default
+```
+
 If default rendering fails on a headless machine, try:
 
 ```bash
 xvfb-run -a python scripts/smoke_test_ai2thor.py --platform default
+```
+
+For CloudRendering diagnostics, verify Vulkan inside the container:
+
+```powershell
+docker run --rm cs175-ai2thor-dev vulkaninfo --summary
 ```
 
 GPU training and Detic inference will likely need a CUDA-enabled Docker setup.

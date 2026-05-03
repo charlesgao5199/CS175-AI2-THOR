@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import suppress
+from pathlib import Path
 
 from ai2thor.controller import Controller
 
@@ -43,7 +44,10 @@ def main() -> None:
     for platform in platforms:
         controller = None
         try:
+            print(f"ai2thor_release_cache={Path.home() / '.ai2thor'}", flush=True)
+            print(f"creating controller with platform={platform}", flush=True)
             controller = build_controller(args.scene, args.width, args.height, platform)
+            print("controller created", flush=True)
             event = controller.step(action="RotateRight")
             print(f"AI2-THOR smoke test passed with platform={platform}")
             print(f"scene={args.scene}")
