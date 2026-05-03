@@ -140,3 +140,21 @@ python scripts/run_random_agent.py --scene FloorPlan10 --target Mug --seed 1 --m
 
 The script prints a JSON episode summary with success, step count, final agent
 position, action counts, and target visibility information.
+
+To save first-person frames, per-step metadata, and a top-down trajectory plot:
+
+```bash
+python scripts/run_random_agent.py --target Mug --max-steps 50 --save-dir outputs/random_mug
+```
+
+The random baseline records RGB frames by default. Use `--render-depth` only if
+an experiment specifically needs depth frames; use the smoke test to verify
+RGB-D simulator support.
+
+This writes:
+
+```text
+outputs/random_mug/episode.json
+outputs/random_mug/trajectory.png
+outputs/random_mug/frames/step_0000.png
+```

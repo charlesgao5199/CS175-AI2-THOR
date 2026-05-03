@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Sequence
 
 from objectnav.env import DEFAULT_ACTIONS, ObjectNavEnv, TargetObservation
+from objectnav.recording import EpisodeRecorder
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ def run_random_episode(
     max_steps: int = 100,
     seed: int = 0,
     actions: Sequence[str] = DEFAULT_ACTIONS,
+    recorder: Optional[EpisodeRecorder] = None,
 ) -> EpisodeSummary:
     agent = RandomAgent(actions=actions, seed=seed)
     action_counts: Counter[str] = Counter()
@@ -63,6 +65,9 @@ def run_random_episode(
     last_action_success: Optional[bool] = None
 
     event = env.start()
+    if recorder is not None:
+        recorder.record(event=event, step=0, action=None)
+
     observation = env.observe_target(event)
     steps_taken = 0
 
@@ -75,6 +80,8 @@ def run_random_episode(
             action_counts[last_action] += 1
             event = env.step(last_action)
             steps_taken += 1
+            if recorder is not None:
+                recorder.record(event=event, step=steps_taken, action=last_action)
             last_action_success = event.metadata.get("lastActionSuccess")
             observation = env.observe_target(event)
             if observation.success:
@@ -97,4 +104,3 @@ def run_random_episode(
         target_observation=observation,
         action_counts=dict(action_counts),
     )
-

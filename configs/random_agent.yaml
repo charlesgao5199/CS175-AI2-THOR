@@ -7,5 +7,4 @@ seed: 0
 width: 300
 height: 300
 visibility_distance: 1.5
-render_depth: true
-
+render_depth: false
