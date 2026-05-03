@@ -123,3 +123,20 @@ python scripts/smoke_test_ai2thor.py --platform default
 
 It creates an AI2-THOR controller, executes one `RotateRight` action, and prints
 RGB/depth frame shapes plus the agent position.
+
+## Random Baseline
+
+Run one random ObjectNav episode:
+
+```bash
+python scripts/run_random_agent.py --config configs/random_agent.yaml
+```
+
+Override the scene, target, seed, or step budget from the command line:
+
+```bash
+python scripts/run_random_agent.py --scene FloorPlan10 --target Mug --seed 1 --max-steps 100
+```
+
+The script prints a JSON episode summary with success, step count, final agent
+position, action counts, and target visibility information.

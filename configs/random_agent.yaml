@@ -1,0 +1,11 @@
+# Flat config consumed by scripts/run_random_agent.py.
+scene: FloorPlan10
+target_object_type: Mug
+platform: default
+max_steps: 100
+seed: 0
+width: 300
+height: 300
+visibility_distance: 1.5
+render_depth: true
+
