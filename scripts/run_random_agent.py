@@ -50,9 +50,28 @@ def main() -> None:
         help="Request AI2-THOR depth frames. RGB-only is more stable for visualization.",
     )
     parser.add_argument("--save-dir", help="Optional directory for frames and plots.")
+    parser.add_argument(
+        "--gif-fps",
+        type=int,
+        default=4,
+        help="GIF frame rate when --save-dir is set. Use 0 to skip GIF export.",
+    )
+    parser.add_argument(
+        "--mp4",
+        action="store_true",
+        help="Also export episode.mp4 when --save-dir is set. Requires ffmpeg.",
+    )
+    parser.add_argument(
+        "--mp4-fps",
+        type=int,
+        help="MP4 frame rate. Defaults to --gif-fps.",
+    )
     args = parser.parse_args()
 
     config = _merged_config(args)
+    if args.mp4 and not args.save_dir:
+        raise ValueError("--mp4 requires --save-dir")
+
     recorder = (
         EpisodeRecorder(
             save_dir=Path(args.save_dir),
@@ -85,6 +104,9 @@ def main() -> None:
     if recorder is not None:
         recorder.write_metadata(summary_dict)
         recorder.write_trajectory()
+        recorder.write_gif(fps=args.gif_fps)
+        if args.mp4:
+            recorder.write_mp4(fps=args.mp4_fps or args.gif_fps)
 
     print(json.dumps(summary_dict, indent=2, sort_keys=True))
 

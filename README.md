@@ -46,6 +46,7 @@ Install system packages needed by AI2-THOR rendering:
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
+  ffmpeg \
   libvulkan1 vulkan-tools mesa-vulkan-drivers mesa-utils \
   libgl1 libgl1-mesa-dri libglib2.0-0 libgtk-3-0 \
   libx11-6 libxext6 libxrender1 libxtst6 libxi6 libxrandr2 \
@@ -147,6 +148,12 @@ To save first-person frames, per-step metadata, and a top-down trajectory plot:
 python scripts/run_random_agent.py --target Mug --max-steps 50 --save-dir outputs/random_mug
 ```
 
+Add `--mp4` to export an MP4 video:
+
+```bash
+python scripts/run_random_agent.py --target Mug --max-steps 50 --save-dir outputs/random_mug --mp4
+```
+
 The random baseline records RGB frames by default. Use `--render-depth` only if
 an experiment specifically needs depth frames; use the smoke test to verify
 RGB-D simulator support.
@@ -155,6 +162,20 @@ This writes:
 
 ```text
 outputs/random_mug/episode.json
+outputs/random_mug/episode.gif
+outputs/random_mug/episode.mp4
 outputs/random_mug/trajectory.png
 outputs/random_mug/frames/step_0000.png
+```
+
+To create a GIF from an existing run without rerunning the simulator:
+
+```bash
+python scripts/render_episode_gif.py outputs/random_mug
+```
+
+To create an MP4 from an existing run:
+
+```bash
+python scripts/render_episode_mp4.py outputs/random_mug
 ```
