@@ -16,6 +16,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from objectnav.config import load_simple_yaml
+from objectnav.coverage_agent import run_coverage_episode
 from objectnav.env import ObjectNavEnv
 from objectnav.heuristic_agent import run_sweep_move_episode
 from objectnav.random_agent import run_random_episode
@@ -67,6 +68,10 @@ def _inspect_row(
     mp4_fps: Optional[int],
     scan_rotations: int,
     recovery_turns: Optional[int],
+    scan_interval: int,
+    loop_window: int,
+    revisit_threshold: int,
+    cell_size: float,
 ) -> Dict[str, Any]:
     episode_dir = save_dir / _episode_dir_name(row, agent)
     max_steps = int(row["max_steps"])
@@ -105,6 +110,18 @@ def _inspect_row(
                 seed=seed,
                 scan_rotations=scan_rotations,
                 recovery_turns=recovery_turns,
+                recorder=recorder,
+            ).to_dict()
+        elif agent == "coverage":
+            replay_summary = run_coverage_episode(
+                env=env,
+                max_steps=max_steps,
+                seed=seed,
+                scan_rotations=scan_rotations,
+                scan_interval=scan_interval,
+                loop_window=loop_window,
+                revisit_threshold=revisit_threshold,
+                cell_size=cell_size,
                 recorder=recorder,
             ).to_dict()
         else:
@@ -198,7 +215,7 @@ def main() -> None:
     parser.add_argument("evaluation_dir", help="Directory containing results.csv.")
     parser.add_argument(
         "--agent",
-        choices=("random", "heuristic"),
+        choices=("random", "heuristic", "coverage"),
         default="random",
         help="Agent policy used to replay the failed episodes.",
     )
@@ -211,6 +228,10 @@ def main() -> None:
     parser.add_argument("--target")
     parser.add_argument("--scan-rotations", type=int)
     parser.add_argument("--recovery-turns", type=int)
+    parser.add_argument("--scan-interval", type=int)
+    parser.add_argument("--loop-window", type=int)
+    parser.add_argument("--revisit-threshold", type=int)
+    parser.add_argument("--cell-size", type=float)
     parser.add_argument("--save-dir", default="outputs/failure_inspection")
     parser.add_argument("--gif-fps", type=int, default=4)
     parser.add_argument("--mp4", action="store_true", help="Also export MP4 videos.")
@@ -227,9 +248,11 @@ def main() -> None:
         rows = rows[: args.limit]
 
     config_path = args.config or (
-        "configs/heuristic_agent.yaml"
-        if args.agent == "heuristic"
-        else "configs/random_agent.yaml"
+        {
+            "random": "configs/random_agent.yaml",
+            "heuristic": "configs/heuristic_agent.yaml",
+            "coverage": "configs/coverage_agent.yaml",
+        }[args.agent]
     )
     config = load_simple_yaml(config_path)
     scan_rotations = args.scan_rotations or int(config.get("scan_rotations", 4))
@@ -238,6 +261,12 @@ def main() -> None:
         if args.recovery_turns is not None
         else config.get("recovery_turns")
     )
+    scan_interval = args.scan_interval or int(config.get("scan_interval", 1))
+    loop_window = args.loop_window or int(config.get("loop_window", 8))
+    revisit_threshold = args.revisit_threshold or int(
+        config.get("revisit_threshold", 3)
+    )
+    cell_size = args.cell_size or float(config.get("cell_size", 0.25))
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -253,6 +282,10 @@ def main() -> None:
             mp4_fps=args.mp4_fps,
             scan_rotations=scan_rotations,
             recovery_turns=recovery_turns,
+            scan_interval=scan_interval,
+            loop_window=loop_window,
+            revisit_threshold=revisit_threshold,
+            cell_size=cell_size,
         )
         inspected_records.append(record)
         print(json.dumps(record, sort_keys=True))

@@ -212,6 +212,35 @@ works:
 python scripts/analyze_evaluation.py outputs/eval_heuristic
 ```
 
+## Coverage Baseline
+
+Run one coverage-oriented ObjectNav episode:
+
+```bash
+python scripts/run_coverage_agent.py --target Mug --max-steps 100 --save-dir outputs/coverage_mug
+```
+
+The coverage baseline adds lightweight position memory to the sweep-and-move
+heuristic. It tracks recently visited grid cells, detects small loops, and
+changes turning behavior when it appears stuck.
+
+Evaluate it with the same scene, target, and seed grid:
+
+```bash
+python scripts/evaluate_coverage_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 \
+  --max-steps 100 \
+  --save-dir outputs/eval_coverage
+```
+
+Analyze coverage results with:
+
+```bash
+python scripts/analyze_evaluation.py outputs/eval_coverage
+```
+
 ## Batch Evaluation
 
 Run multiple random baseline episodes and write aggregate metrics:
@@ -262,6 +291,12 @@ For heuristic evaluation results, replay failures with the heuristic policy:
 
 ```bash
 python scripts/inspect_failures.py outputs/eval_heuristic --agent heuristic --limit 5 --save-dir outputs/failure_inspection_heuristic
+```
+
+For coverage evaluation results, replay failures with the coverage policy:
+
+```bash
+python scripts/inspect_failures.py outputs/eval_coverage --agent coverage --limit 5 --save-dir outputs/failure_inspection_coverage
 ```
 
 Each inspected failure writes a folder with:
