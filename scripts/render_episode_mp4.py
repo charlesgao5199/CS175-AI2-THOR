@@ -1,4 +1,4 @@
-"""Create an MP4 from frames saved by run_random_agent.py."""
+"""Create an MP4 from frames saved by an ObjectNav episode script."""
 
 from __future__ import annotations
 

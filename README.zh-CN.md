@@ -10,6 +10,14 @@
 - 语义地图加传统规划方法
 - 语义地图加 LLM 引导探索方法
 
+## Baseline 概览
+
+| Baseline | 主要脚本 | 作用 |
+| --- | --- | --- |
+| Random | `run_random_agent.py`, `evaluate_random_agent.py` | 完全随机动作，用来做最基础的探索下限。 |
+| Heuristic | `run_heuristic_agent.py`, `evaluate_heuristic_agent.py` | 非随机的 sweep-and-move 探索策略。 |
+| Coverage | `run_coverage_agent.py`, `evaluate_coverage_agent.py` | 在 sweep-and-move 上加入轻量访问记忆和卡住恢复策略。 |
+
 ## 环境
 
 目前建议使用 Python 3.8。AI2-THOR、ProcTHOR、AllenAct 风格的 embodied AI 代码、PyTorch 和 detector 库都比较容易受到版本不匹配的影响，所以先固定一个稳定的基础环境。
@@ -120,6 +128,56 @@ python scripts/smoke_test_ai2thor.py --platform default
 ```
 
 它会创建一个 AI2-THOR controller，执行一次 `RotateRight` 动作，并打印 RGB/depth frame 的 shape 和 agent 位置。这个测试不是算法实验，而是确认 simulator、渲染和 Python 环境都能正常工作。
+
+## 推荐工作流
+
+下面这些命令应该在已经激活 `ai2thor-objectnav` 的 WSL 或 macOS shell 里运行。
+
+1. 先确认 simulator 和渲染正常：
+
+```bash
+python scripts/smoke_test_ai2thor.py --platform default
+```
+
+2. 跑一个带可视化输出的 episode：
+
+```bash
+python scripts/run_random_agent.py --target Mug --max-steps 50 --save-dir outputs/random_mug --mp4
+```
+
+3. 用同一组 3 scene x 3 target x 10 seed 设置评估三个 baseline：
+
+```bash
+python scripts/evaluate_random_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 3 4 5 6 7 8 9 \
+  --max-steps 100 \
+  --save-dir outputs/eval_random_3scenes_3targets_10seeds
+
+python scripts/evaluate_heuristic_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 3 4 5 6 7 8 9 \
+  --max-steps 100 \
+  --save-dir outputs/eval_heuristic_3scenes_3targets_10seeds
+
+python scripts/evaluate_coverage_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 3 4 5 6 7 8 9 \
+  --max-steps 100 \
+  --save-dir outputs/eval_coverage_3scenes_3targets_10seeds
+```
+
+4. 生成分析报告，并检查失败案例：
+
+```bash
+python scripts/analyze_evaluation.py outputs/eval_random_3scenes_3targets_10seeds
+python scripts/analyze_evaluation.py outputs/eval_heuristic_3scenes_3targets_10seeds
+python scripts/analyze_evaluation.py outputs/eval_coverage_3scenes_3targets_10seeds
+python scripts/inspect_failures.py outputs/eval_coverage_3scenes_3targets_10seeds --agent coverage --limit 5 --save-dir outputs/failure_inspection_coverage
+```
 
 ## Random Baseline
 
@@ -308,3 +366,9 @@ inspection.json
 ```bash
 python scripts/inspect_failures.py outputs/eval_random --agent random --target Bowl --limit 3
 ```
+
+## 输出和 Git
+
+实验生成的文件都应该放在 `outputs/` 下面；这个目录已经被 `.gitignore`
+忽略。建议提交代码、config 和 README 变更。每个 episode 的 frames、GIF、
+MP4、CSV、plots、`summary.json` 等生成结果默认留在本地，除非团队明确想共享某个小的结果文件。

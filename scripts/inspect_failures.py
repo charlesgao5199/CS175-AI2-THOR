@@ -221,7 +221,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--config",
-        help="Agent config path. Defaults to the matching random or heuristic config.",
+        help="Agent config path. Defaults to the matching config for --agent.",
     )
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--scene")

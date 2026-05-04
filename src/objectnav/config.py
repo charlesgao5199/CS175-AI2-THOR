@@ -1,7 +1,7 @@
 """Small configuration helpers.
 
 The project will likely move to a fuller config system later. For now, this
-keeps the random-agent baseline runnable without adding another dependency.
+keeps the baseline scripts runnable without adding another dependency.
 """
 
 from __future__ import annotations
@@ -50,4 +50,3 @@ def load_simple_yaml(path: str | Path) -> Dict[str, Any]:
             raise ValueError(f"Missing config key on line {line_number}")
         config[key] = _parse_scalar(value)
     return config
-

@@ -1,4 +1,4 @@
-"""Minimal AI2-THOR smoke test for the Docker dev environment."""
+"""Minimal AI2-THOR smoke test for the local simulator environment."""
 
 from __future__ import annotations
 

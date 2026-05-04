@@ -10,6 +10,14 @@ The project compares:
 - Semantic mapping plus classical planning.
 - Semantic mapping plus LLM-guided exploration.
 
+## Baseline Overview
+
+| Baseline | Main scripts | Purpose |
+| --- | --- | --- |
+| Random | `run_random_agent.py`, `evaluate_random_agent.py` | Lower-bound exploration baseline with random actions. |
+| Heuristic | `run_heuristic_agent.py`, `evaluate_heuristic_agent.py` | Non-random sweep-and-move exploration policy. |
+| Coverage | `run_coverage_agent.py`, `evaluate_coverage_agent.py` | Sweep-and-move policy with lightweight visited-cell memory and loop recovery. |
+
 ## Environment
 
 Use Python 3.8 for now. AI2-THOR, ProcTHOR, AllenAct-style embodied AI code,
@@ -126,6 +134,56 @@ python scripts/smoke_test_ai2thor.py --platform default
 
 It creates an AI2-THOR controller, executes one `RotateRight` action, and prints
 RGB/depth frame shapes plus the agent position.
+
+## Recommended Workflow
+
+Run these from the activated WSL or macOS environment.
+
+1. Verify simulator rendering:
+
+```bash
+python scripts/smoke_test_ai2thor.py --platform default
+```
+
+2. Run one visual episode:
+
+```bash
+python scripts/run_random_agent.py --target Mug --max-steps 50 --save-dir outputs/random_mug --mp4
+```
+
+3. Evaluate the three current baselines on the same 3 scene x 3 target x 10 seed grid:
+
+```bash
+python scripts/evaluate_random_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 3 4 5 6 7 8 9 \
+  --max-steps 100 \
+  --save-dir outputs/eval_random_3scenes_3targets_10seeds
+
+python scripts/evaluate_heuristic_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 3 4 5 6 7 8 9 \
+  --max-steps 100 \
+  --save-dir outputs/eval_heuristic_3scenes_3targets_10seeds
+
+python scripts/evaluate_coverage_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 3 4 5 6 7 8 9 \
+  --max-steps 100 \
+  --save-dir outputs/eval_coverage_3scenes_3targets_10seeds
+```
+
+4. Generate reports and inspect failures:
+
+```bash
+python scripts/analyze_evaluation.py outputs/eval_random_3scenes_3targets_10seeds
+python scripts/analyze_evaluation.py outputs/eval_heuristic_3scenes_3targets_10seeds
+python scripts/analyze_evaluation.py outputs/eval_coverage_3scenes_3targets_10seeds
+python scripts/inspect_failures.py outputs/eval_coverage_3scenes_3targets_10seeds --agent coverage --limit 5 --save-dir outputs/failure_inspection_coverage
+```
 
 ## Random Baseline
 
@@ -314,3 +372,10 @@ Use `--scene` or `--target` to focus on one subset, for example:
 ```bash
 python scripts/inspect_failures.py outputs/eval_random --agent random --target Bowl --limit 3
 ```
+
+## Outputs and Git
+
+Generated experiment artifacts should stay under `outputs/`, which is ignored by
+`.gitignore`. Commit source code, configs, and README changes. Avoid committing
+per-episode frames, GIFs, MP4s, CSVs, plots, or `summary.json` unless the team
+intentionally wants to share a small result artifact.
