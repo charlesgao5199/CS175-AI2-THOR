@@ -182,6 +182,36 @@ To create an MP4 from an existing run:
 python scripts/render_episode_mp4.py outputs/random_mug
 ```
 
+## Heuristic Baseline
+
+Run one simple non-random ObjectNav episode:
+
+```bash
+python scripts/run_heuristic_agent.py --target Mug --max-steps 100 --save-dir outputs/heuristic_mug
+```
+
+The heuristic baseline scans at each location, moves forward, and rotates when
+blocked. It is still a lightweight baseline, but it gives the agent a more
+structured exploration pattern than random actions.
+
+Evaluate it over multiple scenes, targets, and seeds:
+
+```bash
+python scripts/evaluate_heuristic_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 \
+  --max-steps 100 \
+  --save-dir outputs/eval_heuristic
+```
+
+The output format matches the random baseline, so the same analysis command
+works:
+
+```bash
+python scripts/analyze_evaluation.py outputs/eval_heuristic
+```
+
 ## Batch Evaluation
 
 Run multiple random baseline episodes and write aggregate metrics:

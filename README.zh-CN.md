@@ -183,6 +183,33 @@ MP4 导出依赖 `ffmpeg`。如果缺少 `ffmpeg`，在 Ubuntu 中运行：
 sudo apt-get install -y ffmpeg
 ```
 
+## Heuristic Baseline
+
+运行一个简单的非随机 ObjectNav episode：
+
+```bash
+python scripts/run_heuristic_agent.py --target Mug --max-steps 100 --save-dir outputs/heuristic_mug
+```
+
+这个 heuristic baseline 会在每个位置先扫视周围，然后向前移动；如果前进失败，就转向恢复。它仍然是轻量 baseline，但比完全随机动作更有结构。
+
+对多个 scene、target 和 seed 做 evaluation：
+
+```bash
+python scripts/evaluate_heuristic_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 \
+  --max-steps 100 \
+  --save-dir outputs/eval_heuristic
+```
+
+heuristic baseline 的输出格式和 random baseline 一样，所以可以复用同一个 analysis 脚本：
+
+```bash
+python scripts/analyze_evaluation.py outputs/eval_heuristic
+```
+
 ## Batch Evaluation
 
 运行多个 random baseline episodes，并输出整体指标：

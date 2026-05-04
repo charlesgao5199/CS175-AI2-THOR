@@ -1,4 +1,4 @@
-"""Evaluate the random ObjectNav baseline over multiple episodes."""
+"""Evaluate the heuristic ObjectNav baseline over multiple episodes."""
 
 from __future__ import annotations
 
@@ -16,18 +16,20 @@ if str(SRC_ROOT) not in sys.path:
 from objectnav.config import load_simple_yaml
 from objectnav.env import ObjectNavEnv
 from objectnav.evaluation import episode_row, summary_payload, write_results
-from objectnav.random_agent import run_random_episode
+from objectnav.heuristic_agent import run_sweep_move_episode
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/random_agent.yaml")
+    parser.add_argument("--config", default="configs/heuristic_agent.yaml")
     parser.add_argument("--scenes", nargs="+")
     parser.add_argument("--targets", nargs="+")
     parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--platform", choices=("default", "cloud"))
-    parser.add_argument("--save-dir", default="outputs/eval_random")
+    parser.add_argument("--scan-rotations", type=int)
+    parser.add_argument("--recovery-turns", type=int)
+    parser.add_argument("--save-dir", default="outputs/eval_heuristic")
     args = parser.parse_args()
 
     config = load_simple_yaml(args.config)
@@ -35,6 +37,12 @@ def main() -> None:
     targets = args.targets or [str(config["target_object_type"])]
     max_steps = args.max_steps or int(config.get("max_steps", 100))
     platform = args.platform or str(config.get("platform", "default"))
+    scan_rotations = args.scan_rotations or int(config.get("scan_rotations", 4))
+    recovery_turns = (
+        args.recovery_turns
+        if args.recovery_turns is not None
+        else config.get("recovery_turns")
+    )
 
     rows: List[Dict[str, Any]] = []
     episode_id = 0
@@ -52,10 +60,12 @@ def main() -> None:
                     render_depth=bool(config.get("render_depth", False)),
                 )
                 try:
-                    summary = run_random_episode(
+                    summary = run_sweep_move_episode(
                         env=env,
                         max_steps=max_steps,
                         seed=seed,
+                        scan_rotations=scan_rotations,
+                        recovery_turns=recovery_turns,
                     ).to_dict()
                     row = episode_row(
                         episode_id=episode_id,
