@@ -220,3 +220,25 @@ outputs/eval_random/success_by_target.png
 outputs/eval_random/steps_by_target.png
 outputs/eval_random/success_by_scene_target.png
 ```
+
+重跑失败的 evaluation episodes，并保存可视化诊断：
+
+```bash
+python scripts/inspect_failures.py outputs/eval_random --limit 5 --save-dir outputs/failure_inspection
+```
+
+每个被检查的失败案例会生成一个文件夹，里面包含：
+
+```text
+episode.json
+episode.gif
+trajectory.png
+frames/
+inspection.json
+```
+
+可以用 `--scene` 或 `--target` 只检查某一部分，例如：
+
+```bash
+python scripts/inspect_failures.py outputs/eval_random --target Bowl --limit 3
+```

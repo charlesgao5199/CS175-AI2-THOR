@@ -221,3 +221,25 @@ outputs/eval_random/success_by_target.png
 outputs/eval_random/steps_by_target.png
 outputs/eval_random/success_by_scene_target.png
 ```
+
+Replay failed evaluation episodes and save visual diagnostics:
+
+```bash
+python scripts/inspect_failures.py outputs/eval_random --limit 5 --save-dir outputs/failure_inspection
+```
+
+Each inspected failure writes a folder with:
+
+```text
+episode.json
+episode.gif
+trajectory.png
+frames/
+inspection.json
+```
+
+Use `--scene` or `--target` to focus on one subset, for example:
+
+```bash
+python scripts/inspect_failures.py outputs/eval_random --target Bowl --limit 3
+```
