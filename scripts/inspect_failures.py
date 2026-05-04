@@ -17,6 +17,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from objectnav.config import load_simple_yaml
 from objectnav.env import ObjectNavEnv
+from objectnav.heuristic_agent import run_sweep_move_episode
 from objectnav.random_agent import run_random_episode
 from objectnav.recording import EpisodeRecorder
 
@@ -35,12 +36,12 @@ def _safe_name(value: str) -> str:
     return safe.strip("_") or "unknown"
 
 
-def _episode_dir_name(row: Dict[str, str]) -> str:
+def _episode_dir_name(row: Dict[str, str], agent: str) -> str:
     episode_id = int(row["episode_id"])
     scene = _safe_name(row["scene"])
     target = _safe_name(row["target_object_type"])
     seed = _safe_name(row["seed"])
-    return f"episode_{episode_id:04d}_{scene}_{target}_seed{seed}"
+    return f"{agent}_episode_{episode_id:04d}_{scene}_{target}_seed{seed}"
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -60,11 +61,14 @@ def _inspect_row(
     row: Dict[str, str],
     config: Dict[str, Any],
     save_dir: Path,
+    agent: str,
     gif_fps: int,
     export_mp4: bool,
     mp4_fps: Optional[int],
+    scan_rotations: int,
+    recovery_turns: Optional[int],
 ) -> Dict[str, Any]:
-    episode_dir = save_dir / _episode_dir_name(row)
+    episode_dir = save_dir / _episode_dir_name(row, agent)
     max_steps = int(row["max_steps"])
     seed = int(row["seed"])
     scene = row["scene"]
@@ -87,12 +91,24 @@ def _inspect_row(
     replay_summary: Optional[Dict[str, Any]] = None
     replay_error = ""
     try:
-        replay_summary = run_random_episode(
-            env=env,
-            max_steps=max_steps,
-            seed=seed,
-            recorder=recorder,
-        ).to_dict()
+        if agent == "random":
+            replay_summary = run_random_episode(
+                env=env,
+                max_steps=max_steps,
+                seed=seed,
+                recorder=recorder,
+            ).to_dict()
+        elif agent == "heuristic":
+            replay_summary = run_sweep_move_episode(
+                env=env,
+                max_steps=max_steps,
+                seed=seed,
+                scan_rotations=scan_rotations,
+                recovery_turns=recovery_turns,
+                recorder=recorder,
+            ).to_dict()
+        else:
+            raise ValueError(f"Unsupported agent: {agent}")
         recorder.write_metadata(replay_summary)
     except Exception as exc:
         replay_error = str(exc)
@@ -106,6 +122,7 @@ def _inspect_row(
             recorder.write_mp4(fps=mp4_fps or gif_fps)
 
     inspection = {
+        "agent": agent,
         "source_result": row,
         "replay_summary": replay_summary,
         "replay_error": replay_error,
@@ -116,6 +133,7 @@ def _inspect_row(
         _write_json(episode_dir / "error.json", {"error": replay_error})
 
     return {
+        "agent": agent,
         "source_episode_id": row["episode_id"],
         "scene": scene,
         "target_object_type": target_object_type,
@@ -136,6 +154,7 @@ def _inspect_row(
 def _write_index(save_dir: Path, records: List[Dict[str, Any]]) -> None:
     table_rows = [
         [
+            record["agent"],
             str(record["source_episode_id"]),
             record["scene"],
             record["target_object_type"],
@@ -154,6 +173,7 @@ def _write_index(save_dir: Path, records: List[Dict[str, Any]]) -> None:
             "# Failure Inspection",
             _markdown_table(
                 [
+                    "agent",
                     "source episode",
                     "scene",
                     "target",
@@ -176,10 +196,21 @@ def _write_index(save_dir: Path, records: List[Dict[str, Any]]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("evaluation_dir", help="Directory containing results.csv.")
-    parser.add_argument("--config", default="configs/random_agent.yaml")
+    parser.add_argument(
+        "--agent",
+        choices=("random", "heuristic"),
+        default="random",
+        help="Agent policy used to replay the failed episodes.",
+    )
+    parser.add_argument(
+        "--config",
+        help="Agent config path. Defaults to the matching random or heuristic config.",
+    )
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--scene")
     parser.add_argument("--target")
+    parser.add_argument("--scan-rotations", type=int)
+    parser.add_argument("--recovery-turns", type=int)
     parser.add_argument("--save-dir", default="outputs/failure_inspection")
     parser.add_argument("--gif-fps", type=int, default=4)
     parser.add_argument("--mp4", action="store_true", help="Also export MP4 videos.")
@@ -195,7 +226,18 @@ def main() -> None:
     if args.limit > 0:
         rows = rows[: args.limit]
 
-    config = load_simple_yaml(args.config)
+    config_path = args.config or (
+        "configs/heuristic_agent.yaml"
+        if args.agent == "heuristic"
+        else "configs/random_agent.yaml"
+    )
+    config = load_simple_yaml(config_path)
+    scan_rotations = args.scan_rotations or int(config.get("scan_rotations", 4))
+    recovery_turns = (
+        args.recovery_turns
+        if args.recovery_turns is not None
+        else config.get("recovery_turns")
+    )
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -205,9 +247,12 @@ def main() -> None:
             row=row,
             config=config,
             save_dir=save_dir,
+            agent=args.agent,
             gif_fps=args.gif_fps,
             export_mp4=args.mp4,
             mp4_fps=args.mp4_fps,
+            scan_rotations=scan_rotations,
+            recovery_turns=recovery_turns,
         )
         inspected_records.append(record)
         print(json.dumps(record, sort_keys=True))

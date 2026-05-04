@@ -251,7 +251,13 @@ outputs/eval_random/success_by_scene_target.png
 重跑失败的 evaluation episodes，并保存可视化诊断：
 
 ```bash
-python scripts/inspect_failures.py outputs/eval_random --limit 5 --save-dir outputs/failure_inspection
+python scripts/inspect_failures.py outputs/eval_random --agent random --limit 5 --save-dir outputs/failure_inspection
+```
+
+如果是 heuristic evaluation 的结果，需要用 heuristic policy 重跑失败案例：
+
+```bash
+python scripts/inspect_failures.py outputs/eval_heuristic --agent heuristic --limit 5 --save-dir outputs/failure_inspection_heuristic
 ```
 
 每个被检查的失败案例会生成一个文件夹，里面包含：
@@ -267,5 +273,5 @@ inspection.json
 可以用 `--scene` 或 `--target` 只检查某一部分，例如：
 
 ```bash
-python scripts/inspect_failures.py outputs/eval_random --target Bowl --limit 3
+python scripts/inspect_failures.py outputs/eval_random --agent random --target Bowl --limit 3
 ```

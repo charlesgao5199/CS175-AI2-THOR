@@ -201,7 +201,7 @@ class EpisodeRecorder:
                 )
                 break
 
-        ax.set_title("Random Agent Trajectory")
+        ax.set_title("Agent Trajectory")
         ax.set_xlabel("x")
         ax.set_ylabel("z")
         ax.axis("equal")

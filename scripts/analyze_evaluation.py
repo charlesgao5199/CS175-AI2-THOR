@@ -296,7 +296,7 @@ def _write_report(
     relative_plots = [path.name for path in plot_paths]
     report = "\n\n".join(
         [
-            "# Random Baseline Evaluation Analysis",
+            "# ObjectNav Evaluation Analysis",
             f"Source: `{evaluation_dir / 'results.csv'}`",
             "## Overall",
             _metrics_table(metrics),

@@ -255,7 +255,13 @@ outputs/eval_random/success_by_scene_target.png
 Replay failed evaluation episodes and save visual diagnostics:
 
 ```bash
-python scripts/inspect_failures.py outputs/eval_random --limit 5 --save-dir outputs/failure_inspection
+python scripts/inspect_failures.py outputs/eval_random --agent random --limit 5 --save-dir outputs/failure_inspection
+```
+
+For heuristic evaluation results, replay failures with the heuristic policy:
+
+```bash
+python scripts/inspect_failures.py outputs/eval_heuristic --agent heuristic --limit 5 --save-dir outputs/failure_inspection_heuristic
 ```
 
 Each inspected failure writes a folder with:
@@ -271,5 +277,5 @@ inspection.json
 Use `--scene` or `--target` to focus on one subset, for example:
 
 ```bash
-python scripts/inspect_failures.py outputs/eval_random --target Bowl --limit 3
+python scripts/inspect_failures.py outputs/eval_random --agent random --target Bowl --limit 3
 ```
