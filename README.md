@@ -377,5 +377,4 @@ python scripts/inspect_failures.py outputs/eval_random --agent random --target B
 
 Generated experiment artifacts should stay under `outputs/`, which is ignored by
 `.gitignore`. Commit source code, configs, and README changes. Avoid committing
-per-episode frames, GIFs, MP4s, CSVs, plots, or `summary.json` unless the team
-intentionally wants to share a small result artifact.
+per-episode frames, GIFs, MP4s, CSVs, plots, or `summary.json`.
