@@ -181,3 +181,27 @@ To create an MP4 from an existing run:
 ```bash
 python scripts/render_episode_mp4.py outputs/random_mug
 ```
+
+## Batch Evaluation
+
+Run multiple random baseline episodes and write aggregate metrics:
+
+```bash
+python scripts/evaluate_random_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 \
+  --max-steps 100 \
+  --save-dir outputs/eval_random
+```
+
+This writes:
+
+```text
+outputs/eval_random/results.csv
+outputs/eval_random/summary.json
+```
+
+`results.csv` contains one row per episode. `summary.json` reports total
+episodes, success rate, average steps, error count, and grouped metrics by scene
+and target.

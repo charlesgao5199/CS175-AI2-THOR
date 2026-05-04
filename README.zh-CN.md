@@ -182,3 +182,25 @@ MP4 导出依赖 `ffmpeg`。如果缺少 `ffmpeg`，在 Ubuntu 中运行：
 ```bash
 sudo apt-get install -y ffmpeg
 ```
+
+## Batch Evaluation
+
+运行多个 random baseline episodes，并输出整体指标：
+
+```bash
+python scripts/evaluate_random_agent.py \
+  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
+  --targets Mug Apple Bowl \
+  --seeds 0 1 2 \
+  --max-steps 100 \
+  --save-dir outputs/eval_random
+```
+
+运行后会生成：
+
+```text
+outputs/eval_random/results.csv
+outputs/eval_random/summary.json
+```
+
+`results.csv` 每一行对应一个 episode。`summary.json` 会汇总总 episode 数、成功率、平均步数、错误数量，并按 scene 和 target 分组统计。
