@@ -204,3 +204,19 @@ outputs/eval_random/summary.json
 ```
 
 `results.csv` 每一行对应一个 episode。`summary.json` 会汇总总 episode 数、成功率、平均步数、错误数量，并按 scene 和 target 分组统计。
+
+从 evaluation 目录生成更容易阅读的报告和图：
+
+```bash
+python scripts/analyze_evaluation.py outputs/eval_random
+```
+
+运行后会生成：
+
+```text
+outputs/eval_random/analysis.md
+outputs/eval_random/success_by_scene.png
+outputs/eval_random/success_by_target.png
+outputs/eval_random/steps_by_target.png
+outputs/eval_random/success_by_scene_target.png
+```

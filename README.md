@@ -205,3 +205,19 @@ outputs/eval_random/summary.json
 `results.csv` contains one row per episode. `summary.json` reports total
 episodes, success rate, average steps, error count, and grouped metrics by scene
 and target.
+
+Generate a readable report and plots from an evaluation directory:
+
+```bash
+python scripts/analyze_evaluation.py outputs/eval_random
+```
+
+This writes:
+
+```text
+outputs/eval_random/analysis.md
+outputs/eval_random/success_by_scene.png
+outputs/eval_random/success_by_target.png
+outputs/eval_random/steps_by_target.png
+outputs/eval_random/success_by_scene_target.png
+```
