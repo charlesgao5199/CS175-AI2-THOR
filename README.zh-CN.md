@@ -371,4 +371,4 @@ python scripts/inspect_failures.py outputs/eval_random --agent random --target B
 
 实验生成的文件都应该放在 `outputs/` 下面；这个目录已经被 `.gitignore`
 忽略。建议提交代码、config 和 README 变更。每个 episode 的 frames、GIF、
-MP4、CSV、plots、`summary.json` 等生成结果默认留在本地，除非团队明确想共享某个小的结果文件。
+MP4、CSV、plots、`summary.json` 等生成结果默认留在本地。
