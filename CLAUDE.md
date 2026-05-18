@@ -1,0 +1,41 @@
+# AI2-THOR Object Goal Navigation
+
+## Overview
+CS 175 course project comparing three Object Goal Navigation methods:
+- Method 1: End-to-end RL (ResNet-18 + GRU + PPO)
+- Method 2: Semantic Map + Classical Planner (Detic + A* + Frontier)
+- Method 3: Semantic Map + LLM-Guided Exploration (Claude API + ReAct)
+
+## Tech Stack
+- Python 3.10+
+- PyTorch with MPS backend (Apple Silicon Mac, NO CUDA)
+- AI2-THOR / ProcTHOR simulation
+- AllenAct framework (Method 1 training)
+- Detic object detector
+- Claude API (Method 3 LLM calls)
+
+## Project Structure
+src/
+  shared/       - Shared interfaces (Observation, SemanticMap, Action, BaseNavigator)
+  mapping/      - Semantic map module (depth projection, grid, visualization)
+  method1/      - End-to-end RL baseline (ResNet-18 + GRU + PPO)
+  method2/      - Semantic map + A* + Frontier exploration
+  method3/      - Semantic map + LLM-guided (map-to-text + ReAct)
+  eval/         - Evaluation pipeline (Success Rate, SPL, SoftSPL)
+configs/        - Training and evaluation configs
+logs/           - Training logs
+results/        - Evaluation results
+
+## Constraints
+- Use torch.device("mps") or "cpu", never "cuda"
+- AI2-THOR action space: MoveAhead, RotateLeft, RotateRight, LookUp, LookDown, Stop
+- Target object categories: AlarmClock, Apple, Bowl, Laptop, Mug, Television, Vase
+- Metrics: Success Rate, SPL, SoftSPL
+- Method 3 uses Claude 3.5 Haiku API — keep costs low
+- All methods must implement BaseNavigator interface from src/shared/interfaces.py
+
+## Code Standards
+- Type hints on all functions
+- Docstrings on all public classes and methods
+- Communicate between modules only through shared interfaces
+- No hardcoded paths — use configs/
