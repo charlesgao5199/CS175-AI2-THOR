@@ -1,0 +1,25 @@
+# Method 1 GPU training dependencies (Linux + CUDA 12.1 / A100).
+# Install with:
+#   pip install -r requirements_gpu.txt --index-url https://download.pytorch.org/whl/cu121
+# or for a generic environment that picks the right torch wheel automatically:
+#   pip install -r requirements_gpu.txt
+
+# Core ML
+torch>=2.2,<2.6
+torchvision>=0.17,<0.21
+
+# Simulator
+ai2thor==5.0.0
+
+# Data + plotting + utils
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7
+opencv-python>=4.8
+imageio[ffmpeg]>=2.31
+Pillow>=10.0
+tqdm>=4.65
+
+# Method 3 in-environment runs (optional — same env supports all methods)
+anthropic>=0.40
+scikit-image>=0.21
