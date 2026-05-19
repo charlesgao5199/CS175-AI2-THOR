@@ -25,6 +25,13 @@ class Observation:
     depth: np.ndarray          # (H, W) float32, meters
     compass: np.ndarray        # (2,) orientation and displacement from start
     target_object: str         # e.g. "Microwave"
+    # Optional list of object detections for this frame. Each entry:
+    #   {"name": str, "dx": float, "dz": float}
+    # where (dx, dz) is the object's world-frame offset from the agent in
+    # meters. Populated by the runner from AI2-THOR's ground-truth visibility
+    # (event.metadata['objects'][i]['visible']) — a stand-in for Detic until
+    # a real detector is wired up.
+    visible_objects: list = field(default_factory=list)
 
 
 @dataclass

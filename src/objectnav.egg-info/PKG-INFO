@@ -1,3 +1,10 @@
+Metadata-Version: 2.4
+Name: objectnav
+Version: 0.1.0
+Summary: CS 175 — AI2-THOR Object Goal Navigation: comparing end-to-end RL, classical, and LLM-guided methods.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
 # AI2-THOR Object Goal Navigation
 
 ## Overview
@@ -31,7 +38,7 @@ results/        - Evaluation results
 - AI2-THOR action space: MoveAhead, RotateLeft, RotateRight, LookUp, LookDown, Stop
 - Target object categories: AlarmClock, Apple, Bowl, Laptop, Mug, Television, Vase
 - Metrics: Success Rate, SPL, SoftSPL
-- Method 3 uses Claude Haiku 4.5 API (`claude-haiku-4-5-20251001`) — keep costs low
+- Method 3 uses Claude 3.5 Haiku API — keep costs low
 - All methods must implement BaseNavigator interface from src/shared/interfaces.py
 
 ## Code Standards
