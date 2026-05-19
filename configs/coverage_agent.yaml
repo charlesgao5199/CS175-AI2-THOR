@@ -1,0 +1,15 @@
+# Flat config consumed by scripts/run_coverage_agent.py.
+scene: FloorPlan10
+target_object_type: Mug
+platform: default
+max_steps: 100
+seed: 0
+width: 300
+height: 300
+visibility_distance: 1.5
+render_depth: false
+scan_rotations: 4
+scan_interval: 1
+loop_window: 8
+revisit_threshold: 3
+cell_size: 0.25
