@@ -143,6 +143,8 @@ class AI2ThorObjectNavEnv:
                  if depth is not None else np.zeros((self.height, self.width), dtype=np.float32))
         if depth.shape != (self.height, self.width):
             depth = depth.astype(np.float32)
+        depth = np.nan_to_num(depth, nan=MAX_DEPTH_M, posinf=MAX_DEPTH_M, neginf=0.0)
+        depth = np.clip(depth, 0.0, MAX_DEPTH_M).astype(np.float32, copy=False)
         agent = event.metadata["agent"]
         heading_rad = float(np.deg2rad(agent["rotation"]["y"]))
         compass = np.array([np.sin(heading_rad), np.cos(heading_rad)], dtype=np.float32)
@@ -349,7 +351,9 @@ class RolloutBuffer:
             if rgb.shape[-2:] != (224, 224):
                 rgb = F.interpolate(rgb, size=(224, 224), mode="bilinear", align_corners=False)
             self.rgb[t, n] = rgb.squeeze(0).to(torch.uint8)
-            depth = torch.from_numpy(obs["depth"]).unsqueeze(0).unsqueeze(0)
+            depth_np = np.nan_to_num(obs["depth"], nan=MAX_DEPTH_M, posinf=MAX_DEPTH_M, neginf=0.0)
+            depth_np = np.clip(depth_np, 0.0, MAX_DEPTH_M).astype(np.float32, copy=False)
+            depth = torch.from_numpy(depth_np).unsqueeze(0).unsqueeze(0)
             if depth.shape[-2:] != (224, 224):
                 depth = F.interpolate(depth, size=(224, 224), mode="bilinear", align_corners=False)
             self.depth[t, n] = depth.squeeze(0)
@@ -524,7 +528,13 @@ class Trainer:
         ]).to(self.device)
         depth = torch.stack([
             F.interpolate(
-                torch.from_numpy(o["depth"]).unsqueeze(0).unsqueeze(0),
+                torch.from_numpy(
+                    np.clip(
+                        np.nan_to_num(o["depth"], nan=MAX_DEPTH_M, posinf=MAX_DEPTH_M, neginf=0.0),
+                        0.0,
+                        MAX_DEPTH_M,
+                    ).astype(np.float32, copy=False)
+                ).unsqueeze(0).unsqueeze(0),
                 size=(224, 224), mode="bilinear", align_corners=False,
             ).squeeze(0)
             for o in obs_list
@@ -596,6 +606,7 @@ class Trainer:
         env_indices = np.arange(N)
         adv_norm = rb.advantages
         adv_norm = (adv_norm - adv_norm.mean()) / (adv_norm.std() + 1e-8)
+        adv_norm = torch.nan_to_num(adv_norm, nan=0.0, posinf=10.0, neginf=-10.0).clamp(-10.0, 10.0)
 
         total_p, total_v, total_e = 0.0, 0.0, 0.0
         n_updates = 0
@@ -615,7 +626,12 @@ class Trainer:
                 actions = rb.actions[:, mb_t].to(self.device, non_blocking=True)
                 old_log_probs = rb.log_probs[:, mb_t].to(self.device, non_blocking=True)
                 advantages = adv_norm[:, mb_t].to(self.device, non_blocking=True)
-                returns = rb.returns[:, mb_t].to(self.device, non_blocking=True)
+                returns = torch.nan_to_num(
+                    rb.returns[:, mb_t].to(self.device, non_blocking=True),
+                    nan=0.0,
+                    posinf=20.0,
+                    neginf=-20.0,
+                )
                 dones = rb.dones[:, mb_t].to(self.device, non_blocking=True)
                 h0 = rb.hidden0[:, mb_t]
 
@@ -630,10 +646,18 @@ class Trainer:
                 value_loss = F.mse_loss(new_values, returns)
                 entropy_loss = -entropy.mean()
                 loss = policy_loss + a.vf_coef * value_loss + a.ent_coef * entropy_loss
+                if not torch.isfinite(loss):
+                    print("[trainer] warning: skipped PPO minibatch with non-finite loss")
+                    self.optimizer.zero_grad(set_to_none=True)
+                    continue
 
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.policy.parameters(), a.max_grad_norm)
+                grad_norm = torch.nn.utils.clip_grad_norm_(self.policy.parameters(), a.max_grad_norm)
+                if not torch.isfinite(grad_norm):
+                    print("[trainer] warning: skipped PPO minibatch with non-finite gradients")
+                    self.optimizer.zero_grad(set_to_none=True)
+                    continue
                 self.optimizer.step()
 
                 total_p += policy_loss.item()
@@ -641,6 +665,8 @@ class Trainer:
                 total_e += entropy.mean().item()
                 n_updates += 1
 
+        if n_updates == 0:
+            return 0.0, 0.0, 0.0
         return total_v / n_updates, total_p / n_updates, total_e / n_updates
 
     # ------------------------------------------------------------------ #

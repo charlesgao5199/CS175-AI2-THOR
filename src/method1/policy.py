@@ -107,8 +107,11 @@ class Method1Policy(nn.Module):
     def _prep_visual(self, rgb_u8: torch.Tensor, depth_m: torch.Tensor) -> torch.Tensor:
         """Build a 4-channel float input from raw observation tensors."""
         rgb = rgb_u8.to(self._rgb_mean.dtype) / 255.0
+        rgb = torch.nan_to_num(rgb, nan=0.0, posinf=1.0, neginf=0.0).clamp(0.0, 1.0)
         rgb = (rgb - self._rgb_mean) / self._rgb_std
-        depth = depth_m.clamp(min=0.0, max=MAX_DEPTH_M) / MAX_DEPTH_M
+        depth = depth_m.to(self._rgb_mean.dtype)
+        depth = torch.nan_to_num(depth, nan=MAX_DEPTH_M, posinf=MAX_DEPTH_M, neginf=0.0)
+        depth = depth.clamp(min=0.0, max=MAX_DEPTH_M) / MAX_DEPTH_M
         return torch.cat([rgb, depth], dim=1)
 
     def _embed_step(
@@ -121,6 +124,7 @@ class Method1Policy(nn.Module):
         x = self._prep_visual(rgb, depth)
         v = self.encoder(x).flatten(1)
         t = self.target_embed(target)
+        compass = torch.nan_to_num(compass, nan=0.0, posinf=0.0, neginf=0.0)
         c = F.relu(self.compass_proj(compass), inplace=True)
         return self.combine(torch.cat([v, t, c], dim=-1))
 
