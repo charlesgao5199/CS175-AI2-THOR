@@ -1,44 +1,69 @@
 # CS175-AI2-THOR
 
-[中文 README](README.zh-CN.md)
-
 Object-goal navigation experiments in AI2-THOR / ProcTHOR for CS 175.
 
-The project compares:
+The current project focus is **Method 1: end-to-end recurrent PPO training**.
+Earlier random, heuristic, and coverage agents remain in the repo as reference
+baselines and pipeline sanity checks.
 
-- End-to-end RL with implicit memory.
-- Semantic mapping plus classical planning.
-- Semantic mapping plus LLM-guided exploration.
+## Methods
 
-## Baseline Overview
-
-| Baseline | Main scripts | Purpose |
+| Method | Main files | Status |
 | --- | --- | --- |
-| Random | `run_random_agent.py`, `evaluate_random_agent.py` | Lower-bound exploration baseline with random actions. |
-| Heuristic | `run_heuristic_agent.py`, `evaluate_heuristic_agent.py` | Non-random sweep-and-move exploration policy. |
-| Coverage | `run_coverage_agent.py`, `evaluate_coverage_agent.py` | Sweep-and-move policy with lightweight visited-cell memory and loop recovery. |
+| Method 1: recurrent PPO | `scripts/train_method1.py`, `src/method1/policy.py`, `src/method1/navigator.py` | Current training focus. |
+| Method 2: semantic mapping + planning | `src/method2/`, `src/mapping/` | Implemented for small evaluation. |
+| Method 3: semantic mapping + LLM guidance | `src/method3/`, `src/mapping/` | Implemented for small evaluation; requires an LLM API key. |
+| Reference baselines | `scripts/run_*_agent.py`, `scripts/evaluate_*_agent.py` | Used to validate simulator, evaluation, visualization, and failure inspection. |
 
-## Environment
+## Method 1 Training
 
-Use Python 3.8 for now. AI2-THOR, ProcTHOR, AllenAct-style embodied AI code,
-PyTorch, and detector libraries are sensitive to version mismatches.
+Method 1 trains a neural policy directly from AI2-THOR interaction.
 
-The initial environment includes:
+Inputs per step:
 
-- Python 3.8
-- AI2-THOR 5.0.0
-- ProcTHOR 0.0.1.dev2
-- Common scientific Python packages
+- RGB image
+- depth image
+- target object id, such as `Mug` or `Apple`
+- heading/compass
 
-Detic / Detectron2 should be added later after the team chooses a CUDA and
-PyTorch target, because that stack is tightly version-coupled.
+Actions:
 
-## Windows Setup
+- `MoveAhead`
+- `RotateLeft`
+- `RotateRight`
+- `LookUp`
+- `LookDown`
+- `STOP`
 
-Use WSL2 with Ubuntu 22.04. This gives us a Linux environment while keeping the
-repository in the Windows filesystem.
+Reward:
 
-From PowerShell:
+- `+10` for successful `STOP` near the target
+- `-0.5` for wrong `STOP`
+- `-0.01` per step
+- max episode length: 500 steps
+
+Architecture:
+
+```text
+RGB-D 224x224 -> ResNet18
+target id     -> embedding
+heading       -> linear projection
+combined      -> GRU memory
+GRU output    -> policy head + value head
+```
+
+The trainer includes local stability fixes for long WSL/GPU runs:
+
+- non-finite RGB-D/compass values are sanitized
+- non-finite PPO loss/gradients are skipped
+- AI2-THOR worker reset/step failures restart that worker's controller
+- `--worker-start-delay` staggers simulator startup on local GPUs
+
+## Environment Setup
+
+### Windows WSL + RTX 2080
+
+Use WSL2 with Ubuntu 22.04. From PowerShell:
 
 ```powershell
 wsl --install -d Ubuntu-22.04
@@ -64,55 +89,87 @@ sudo apt-get install -y \
   libasound2 libnss3 libgbm1
 ```
 
-Install Miniforge:
-
-```bash
-cd ~
-wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
-bash Miniforge3-Linux-x86_64.sh
-```
-
-Restart the Ubuntu shell, then create the conda environment:
+Create and activate the conda environment:
 
 ```bash
 mamba create -n ai2thor-objectnav python=3.8 -y
 conda activate ai2thor-objectnav
-pip install ai2thor==5.0.0 procthor==0.0.1.dev2
 ```
 
-Run the smoke test from the repository:
+Install simulator and GPU training dependencies:
 
 ```bash
 cd /mnt/c/Users/Charl/Desktop/AI2-THOR/CS175-AI2-THOR
+pip install --upgrade pip
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements_gpu.txt --extra-index-url https://download.pytorch.org/whl/cu121
+```
+
+Confirm PyTorch can use the GPU:
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+```
+
+Expected:
+
+```text
+True
+NVIDIA GeForce RTX 2080
+```
+
+Run the smoke test:
+
+```bash
 python scripts/smoke_test_ai2thor.py --platform default
 ```
 
-Expected output:
+Expected output includes:
 
 ```text
 AI2-THOR smoke test passed with platform=default
-scene=FloorPlan10
 frame_shape=(300, 300, 3)
 depth_shape=(300, 300)
 ```
 
-For graphics diagnostics:
+### RunPod / Lambda A100
+
+For cloud training, an A100 80GB with a CUDA 12.1 Ubuntu 22.04 image is a good
+target. A PyTorch-preinstalled image saves setup time.
 
 ```bash
-echo $DISPLAY
-glxinfo -B
+nvidia-smi
+
+sudo apt-get update
+sudo apt-get install -y \
+  xvfb ffmpeg \
+  libvulkan1 vulkan-tools mesa-vulkan-drivers \
+  libgl1 libgl1-mesa-dri libglib2.0-0 \
+  libx11-6 libxext6 libxrender1 libxtst6 \
+  libxi6 libxrandr2 libxcursor1 libxdamage1 \
+  libxfixes3 libxcomposite1 libasound2 libnss3 libgbm1
+
+git clone https://github.com/charlesgao5199/CS175-AI2-THOR.git ~/CS175-AI2-THOR
+cd ~/CS175-AI2-THOR
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements_gpu.txt --extra-index-url https://download.pytorch.org/whl/cu121
+
+xvfb-run -a python scripts/smoke_test_ai2thor.py --platform default
 ```
 
-A working WSL setup should report an accelerated OpenGL renderer, for example:
+If the default renderer fails on a headless cloud machine, try:
 
-```text
-OpenGL renderer string: D3D12 (NVIDIA GeForce RTX 2080)
+```bash
+python scripts/smoke_test_ai2thor.py --platform cloud
 ```
 
-## macOS Setup
+### macOS
 
-Mac users should start with a native Miniforge environment and run the same
-smoke test:
+macOS can run simulator smoke tests and lightweight baselines with a native
+Miniforge environment:
 
 ```bash
 mamba create -n ai2thor-objectnav python=3.8 -y
@@ -122,36 +179,141 @@ python scripts/smoke_test_ai2thor.py --platform default
 ```
 
 Apple Silicon Macs may need an x86_64/Rosetta environment or a Linux GPU
-machine for simulator-heavy experiments.
+machine for simulator-heavy training.
 
-## Smoke Test
+## Training Commands
 
-The smoke test is:
+### Local RTX 2080 / WSL
 
-```bash
-python scripts/smoke_test_ai2thor.py --platform default
-```
-
-It creates an AI2-THOR controller, executes one `RotateRight` action, and prints
-RGB/depth frame shapes plus the agent position.
-
-## Recommended Workflow
-
-Run these from the activated WSL or macOS environment.
-
-1. Verify simulator rendering:
+The RTX 2080 can run 4 environments for short tests, but long runs are more
+stable with 2 environments.
 
 ```bash
-python scripts/smoke_test_ai2thor.py --platform default
+python scripts/train_method1.py \
+  --device cuda \
+  --platform default \
+  --total-steps 2000000 \
+  --num-envs 2 \
+  --rollout-steps 128 \
+  --lr 0.0001 \
+  --max-grad-norm 0.25 \
+  --checkpoint-interval 50000 \
+  --log-interval 5000 \
+  --checkpoints-dir checkpoints/method1_2080_2env \
+  --logs-dir logs/method1_2080_2env \
+  --worker-start-delay 15 \
+  --no-resume
 ```
 
-2. Run one visual episode:
+If interrupted, resume with the same command but remove `--no-resume`.
+
+### A100 / RunPod
+
+The A100 configuration can use more parallel simulators:
+
+```bash
+xvfb-run -a python scripts/train_method1.py \
+  --total-steps 2000000 \
+  --num-envs 4 \
+  --rollout-steps 128 \
+  --platform default
+```
+
+Or use CloudRendering:
+
+```bash
+python scripts/train_method1.py \
+  --total-steps 2000000 \
+  --num-envs 4 \
+  --rollout-steps 128 \
+  --platform cloud
+```
+
+## Monitoring
+
+Tail the training log:
+
+```bash
+tail -f logs/method1_2080_2env/training_log.csv
+```
+
+Watch GPU usage:
+
+```bash
+nvidia-smi -l 1
+```
+
+Plot training curves:
+
+```bash
+python scripts/plot_training.py \
+  --log logs/method1_2080_2env/training_log.csv \
+  --out logs/method1_2080_2env/curves.png \
+  --smooth-window 10
+```
+
+Training outputs:
+
+```text
+checkpoints/<run_name>/latest.pt
+checkpoints/<run_name>/step_000050000.pt
+logs/<run_name>/training_log.csv
+logs/<run_name>/curves.png
+```
+
+The CSV columns are:
+
+```text
+step,update,episodes,mean_reward,success_rate,episode_len,
+value_loss,policy_loss,entropy,lr,wall_time_s
+```
+
+## Evaluation
+
+### Method 1 Checkpoint
+
+After training, `src/method1/navigator.py` can load a checkpoint:
+
+```python
+from method1 import Method1Navigator
+
+nav = Method1Navigator("checkpoints/method1_2080_2env/latest.pt")
+```
+
+This plugs into the shared `BaseNavigator` interface used by the evaluation
+runner.
+
+### Method 2 / Method 3 Small Evaluation
+
+Run the small evaluation across Random, Method 2, and Method 3:
+
+```bash
+python scripts/run_small_eval.py
+```
+
+This writes:
+
+```text
+results/small_eval.json
+results/llm_reasoning.json
+results/maps/
+results/videos/
+```
+
+Method 3 requires the Anthropic API dependency and credentials.
+
+### Reference Baselines
+
+These lightweight baselines are not the current research focus, but they are
+useful for validating the simulator, visualization, and evaluation pipeline.
+
+Run one random episode:
 
 ```bash
 python scripts/run_random_agent.py --target Mug --max-steps 50 --save-dir outputs/random_mug --mp4
 ```
 
-3. Evaluate the three current baselines on the same 3 scene x 3 target x 10 seed grid:
+Evaluate random / heuristic / coverage on the same small grid:
 
 ```bash
 python scripts/evaluate_random_agent.py \
@@ -176,206 +338,76 @@ python scripts/evaluate_coverage_agent.py \
   --save-dir outputs/eval_coverage_3scenes_3targets_10seeds
 ```
 
-4. Generate reports and inspect failures:
+Generate reports:
 
 ```bash
 python scripts/analyze_evaluation.py outputs/eval_random_3scenes_3targets_10seeds
 python scripts/analyze_evaluation.py outputs/eval_heuristic_3scenes_3targets_10seeds
 python scripts/analyze_evaluation.py outputs/eval_coverage_3scenes_3targets_10seeds
-python scripts/inspect_failures.py outputs/eval_coverage_3scenes_3targets_10seeds --agent coverage --limit 5 --save-dir outputs/failure_inspection_coverage
 ```
 
-## Random Baseline
-
-Run one random ObjectNav episode:
+Inspect failed episodes:
 
 ```bash
-python scripts/run_random_agent.py --config configs/random_agent.yaml
-```
-
-Override the scene, target, seed, or step budget from the command line:
-
-```bash
-python scripts/run_random_agent.py --scene FloorPlan10 --target Mug --seed 1 --max-steps 100
-```
-
-The script prints a JSON episode summary with success, step count, final agent
-position, action counts, and target visibility information.
-
-To save first-person frames, per-step metadata, and a top-down trajectory plot:
-
-```bash
-python scripts/run_random_agent.py --target Mug --max-steps 50 --save-dir outputs/random_mug
-```
-
-Add `--mp4` to export an MP4 video:
-
-```bash
-python scripts/run_random_agent.py --target Mug --max-steps 50 --save-dir outputs/random_mug --mp4
-```
-
-The random baseline records RGB frames by default. Use `--render-depth` only if
-an experiment specifically needs depth frames; use the smoke test to verify
-RGB-D simulator support.
-
-This writes:
-
-```text
-outputs/random_mug/episode.json
-outputs/random_mug/episode.gif
-outputs/random_mug/episode.mp4
-outputs/random_mug/trajectory.png
-outputs/random_mug/frames/step_0000.png
-```
-
-To create a GIF from an existing run without rerunning the simulator:
-
-```bash
-python scripts/render_episode_gif.py outputs/random_mug
-```
-
-To create an MP4 from an existing run:
-
-```bash
-python scripts/render_episode_mp4.py outputs/random_mug
-```
-
-## Heuristic Baseline
-
-Run one simple non-random ObjectNav episode:
-
-```bash
-python scripts/run_heuristic_agent.py --target Mug --max-steps 100 --save-dir outputs/heuristic_mug
-```
-
-The heuristic baseline scans at each location, moves forward, and rotates when
-blocked. It is still a lightweight baseline, but it gives the agent a more
-structured exploration pattern than random actions.
-
-Evaluate it over multiple scenes, targets, and seeds:
-
-```bash
-python scripts/evaluate_heuristic_agent.py \
-  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
-  --targets Mug Apple Bowl \
-  --seeds 0 1 2 \
-  --max-steps 100 \
-  --save-dir outputs/eval_heuristic
-```
-
-The output format matches the random baseline, so the same analysis command
-works:
-
-```bash
-python scripts/analyze_evaluation.py outputs/eval_heuristic
-```
-
-## Coverage Baseline
-
-Run one coverage-oriented ObjectNav episode:
-
-```bash
-python scripts/run_coverage_agent.py --target Mug --max-steps 100 --save-dir outputs/coverage_mug
-```
-
-The coverage baseline adds lightweight position memory to the sweep-and-move
-heuristic. It tracks recently visited grid cells, detects small loops, and
-changes turning behavior when it appears stuck.
-
-Evaluate it with the same scene, target, and seed grid:
-
-```bash
-python scripts/evaluate_coverage_agent.py \
-  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
-  --targets Mug Apple Bowl \
-  --seeds 0 1 2 \
-  --max-steps 100 \
-  --save-dir outputs/eval_coverage
-```
-
-Analyze coverage results with:
-
-```bash
-python scripts/analyze_evaluation.py outputs/eval_coverage
-```
-
-## Batch Evaluation
-
-Run multiple random baseline episodes and write aggregate metrics:
-
-```bash
-python scripts/evaluate_random_agent.py \
-  --scenes FloorPlan10 FloorPlan11 FloorPlan12 \
-  --targets Mug Apple Bowl \
-  --seeds 0 1 2 \
-  --max-steps 100 \
-  --save-dir outputs/eval_random
-```
-
-This writes:
-
-```text
-outputs/eval_random/results.csv
-outputs/eval_random/summary.json
-```
-
-`results.csv` contains one row per episode. `summary.json` reports total
-episodes, success rate, average steps, error count, and grouped metrics by scene
-and target.
-
-Generate a readable report and plots from an evaluation directory:
-
-```bash
-python scripts/analyze_evaluation.py outputs/eval_random
-```
-
-This writes:
-
-```text
-outputs/eval_random/analysis.md
-outputs/eval_random/success_by_scene.png
-outputs/eval_random/success_by_target.png
-outputs/eval_random/steps_by_target.png
-outputs/eval_random/success_by_scene_target.png
-```
-
-Replay failed evaluation episodes and save visual diagnostics:
-
-```bash
-python scripts/inspect_failures.py outputs/eval_random --agent random --limit 5 --save-dir outputs/failure_inspection
-```
-
-For heuristic evaluation results, replay failures with the heuristic policy:
-
-```bash
-python scripts/inspect_failures.py outputs/eval_heuristic --agent heuristic --limit 5 --save-dir outputs/failure_inspection_heuristic
-```
-
-For coverage evaluation results, replay failures with the coverage policy:
-
-```bash
-python scripts/inspect_failures.py outputs/eval_coverage --agent coverage --limit 5 --save-dir outputs/failure_inspection_coverage
-```
-
-Each inspected failure writes a folder with:
-
-```text
-episode.json
-episode.gif
-trajectory.png
-frames/
-inspection.json
-```
-
-Use `--scene` or `--target` to focus on one subset, for example:
-
-```bash
-python scripts/inspect_failures.py outputs/eval_random --agent random --target Bowl --limit 3
+python scripts/inspect_failures.py outputs/eval_coverage_3scenes_3targets_10seeds \
+  --agent coverage \
+  --limit 5 \
+  --save-dir outputs/failure_inspection_coverage
 ```
 
 ## Outputs and Git
 
-Generated experiment artifacts should stay under `outputs/`, which is ignored by
-`.gitignore`. Commit source code, configs, and README changes. Avoid committing
-per-episode frames, GIFs, MP4s, CSVs, plots, or `summary.json` unless the team
-intentionally wants to share a small result artifact.
+Generated experiment artifacts should stay under ignored directories:
+
+```text
+outputs/
+logs/
+checkpoints/
+runs/
+wandb/
+```
+
+Commit source code, configs, and README changes. Avoid committing frames, GIFs,
+MP4s, CSVs, plots, logs, checkpoints, or generated JSON results unless the team
+intentionally wants to share a small artifact.
+
+## Troubleshooting
+
+**RTX 2080 / WSL instability with 4 envs**
+
+Use:
+
+```bash
+--num-envs 2 --rollout-steps 128 --worker-start-delay 15
+```
+
+Four environments can work for short tests, but long runs are more likely to hit
+AI2-THOR reset timeouts or run close to the 8GB VRAM limit.
+
+**CUDA out of memory**
+
+Reduce `--num-envs` first. If needed, also reduce `--rollout-steps`:
+
+```bash
+--num-envs 2 --rollout-steps 64
+```
+
+**AI2-THOR timeout or stale simulator processes**
+
+Check for stale simulator processes:
+
+```bash
+ps -eo pid,cmd | grep thor-Linux64 | grep -v grep
+```
+
+Stop stale processes before restarting training.
+
+**Headless rendering errors**
+
+On cloud machines, try `--platform cloud`. Otherwise wrap the command in
+`xvfb-run -a`.
+
+**Resume vs. clean start**
+
+Resume is automatic if `latest.pt` exists in the checkpoint directory. To force
+a clean run, pass `--no-resume` or choose a new checkpoint directory.

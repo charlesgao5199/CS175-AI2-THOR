@@ -9,7 +9,7 @@ Run on a CUDA box (RunPod / Lambda):
     xvfb-run -a python scripts/train_method1.py \\
         --total-steps 2_000_000 --num-envs 4 --rollout-steps 128
 
-See ``README_TRAINING.md`` for the full setup recipe.
+See ``README.md`` for setup, training, monitoring, and troubleshooting.
 """
 
 from __future__ import annotations

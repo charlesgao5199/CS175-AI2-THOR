@@ -1,4 +1,4 @@
-# Method 1 GPU training dependencies (Linux + CUDA 12.1 / A100).
+# Method 1 GPU training dependencies (Linux + CUDA, local GPU or A100).
 # Install with:
 #   pip install -r requirements_gpu.txt --index-url https://download.pytorch.org/whl/cu121
 # or for a generic environment that picks the right torch wheel automatically:
