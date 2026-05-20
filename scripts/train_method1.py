@@ -226,19 +226,64 @@ class AI2ThorObjectNavEnv:
 # SubprocVecEnv (multiprocessing rollouts)
 # --------------------------------------------------------------------------- #
 
+def _reset_with_retries(env: AI2ThorObjectNavEnv, context: str):
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return env.reset()
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[worker] {context} reset failed on attempt {attempt}: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            env.close()
+            time.sleep(min(30.0, float(attempt)))
+
+
+def _step_with_recovery(env: AI2ThorObjectNavEnv, action_id: int):
+    try:
+        return env.step(action_id)
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[worker] step failed; resetting environment: "
+            f"{type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        env.close()
+        obs, reset_info = _reset_with_retries(env, "step recovery")
+        info = {
+            "success": False,
+            "stop_issued": False,
+            "episode_steps": env._steps,
+            "env_error": f"{type(exc).__name__}: {exc}",
+            "reset_info": reset_info,
+        }
+        return obs, R_WRONG_STOP, True, info
+
+
 def _worker(conn, env_kwargs):
+    worker_id = int(env_kwargs.pop("worker_id", 0))
+    startup_delay_s = float(env_kwargs.pop("startup_delay_s", 0.0))
+    if startup_delay_s > 0:
+        print(
+            f"[worker {worker_id}] waiting {startup_delay_s:.1f}s before AI2-THOR startup",
+            flush=True,
+        )
+        time.sleep(startup_delay_s)
     env = AI2ThorObjectNavEnv(**env_kwargs)
     try:
         while True:
             cmd, data = conn.recv()
             if cmd == "reset":
-                obs, info = env.reset()
+                obs, info = _reset_with_retries(env, "initial")
                 conn.send((obs, info))
             elif cmd == "step":
-                obs, reward, done, info = env.step(data)
-                if done:
+                obs, reward, done, info = _step_with_recovery(env, data)
+                if done and "reset_info" not in info:
                     final_info = info
-                    obs, reset_info = env.reset()
+                    obs, reset_info = _reset_with_retries(env, "episode boundary")
                     info = {**final_info, "reset_info": reset_info}
                 conn.send((obs, reward, done, info))
             elif cmd == "close":
@@ -397,6 +442,8 @@ class Trainer:
 
         env_kwargs_list = [
             {
+                "worker_id": i,
+                "startup_delay_s": i * args.worker_start_delay,
                 "scenes": self.scenes,
                 "targets": self.targets,
                 "width": 224,
@@ -742,6 +789,8 @@ def parse_args() -> argparse.Namespace:
     # Misc
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="auto")
+    p.add_argument("--worker-start-delay", type=float, default=5.0,
+                   help="Seconds to stagger AI2-THOR worker startup. Useful on WSL/local GPUs.")
     p.add_argument("--no-pretrained", action="store_true",
                    help="Skip ImageNet-pretrained ResNet18 init.")
     p.add_argument("--resume", action="store_true", default=True,
