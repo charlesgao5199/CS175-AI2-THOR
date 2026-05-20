@@ -185,23 +185,26 @@ machine for simulator-heavy training.
 
 ### Local RTX 2080 / WSL
 
-The RTX 2080 can run 4 environments for short tests, but long runs are more
-stable with 2 environments.
+The RTX 2080 can run 2-4 environments for short tests, but long WSL runs are
+most stable with 1 environment. This is slower, but it avoids most AI2-THOR
+reset stalls on an 8GB local GPU.
 
 ```bash
 python scripts/train_method1.py \
   --device cuda \
   --platform default \
   --total-steps 2000000 \
-  --num-envs 2 \
+  --num-envs 1 \
   --rollout-steps 128 \
   --lr 0.0001 \
   --max-grad-norm 0.25 \
-  --checkpoint-interval 50000 \
+  --checkpoint-interval 10000 \
   --log-interval 5000 \
-  --checkpoints-dir checkpoints/method1_2080_2env \
-  --logs-dir logs/method1_2080_2env \
-  --worker-start-delay 15 \
+  --checkpoints-dir checkpoints/method1_2080_1env \
+  --logs-dir logs/method1_2080_1env \
+  --worker-start-delay 0 \
+  --max-reset-retries 3 \
+  --worker-timeout 900 \
   --no-resume
 ```
 
@@ -234,7 +237,7 @@ python scripts/train_method1.py \
 Tail the training log:
 
 ```bash
-tail -f logs/method1_2080_2env/training_log.csv
+tail -f logs/method1_2080_1env/training_log.csv
 ```
 
 Watch GPU usage:
@@ -247,8 +250,8 @@ Plot training curves:
 
 ```bash
 python scripts/plot_training.py \
-  --log logs/method1_2080_2env/training_log.csv \
-  --out logs/method1_2080_2env/curves.png \
+  --log logs/method1_2080_1env/training_log.csv \
+  --out logs/method1_2080_1env/curves.png \
   --smooth-window 10
 ```
 
@@ -277,7 +280,7 @@ After training, `src/method1/navigator.py` can load a checkpoint:
 ```python
 from method1 import Method1Navigator
 
-nav = Method1Navigator("checkpoints/method1_2080_2env/latest.pt")
+nav = Method1Navigator("checkpoints/method1_2080_1env/latest.pt")
 ```
 
 This plugs into the shared `BaseNavigator` interface used by the evaluation
@@ -375,10 +378,16 @@ intentionally wants to share a small artifact.
 
 **RTX 2080 / WSL instability with 4 envs**
 
-Use:
+For short tests, 2 environments can be used:
 
 ```bash
 --num-envs 2 --rollout-steps 128 --worker-start-delay 15
+```
+
+For long local training, prefer:
+
+```bash
+--num-envs 1 --rollout-steps 128 --max-reset-retries 3 --worker-timeout 900
 ```
 
 Four environments can work for short tests, but long runs are more likely to hit
@@ -401,6 +410,27 @@ ps -eo pid,cmd | grep thor-Linux64 | grep -v grep
 ```
 
 Stop stale processes before restarting training.
+
+```bash
+python scripts/cleanup_ai2thor_processes.py --dry-run
+python scripts/cleanup_ai2thor_processes.py
+```
+
+If the Python trainer itself is stuck, include it in cleanup:
+
+```bash
+python scripts/cleanup_ai2thor_processes.py --include-training
+```
+
+From PowerShell, run the same cleanup through WSL:
+
+```powershell
+wsl -d Ubuntu-22.04 -- bash -lc "cd /mnt/c/Users/Charl/Desktop/AI2-THOR/CS175-AI2-THOR && python scripts/cleanup_ai2thor_processes.py --include-training"
+```
+
+The trainer also has built-in protection: workers stop after
+`--max-reset-retries`, the parent kills unresponsive workers after
+`--worker-timeout`, and the latest checkpoint is saved before exit.
 
 **Headless rendering errors**
 

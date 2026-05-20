@@ -226,23 +226,40 @@ class AI2ThorObjectNavEnv:
 # SubprocVecEnv (multiprocessing rollouts)
 # --------------------------------------------------------------------------- #
 
-def _reset_with_retries(env: AI2ThorObjectNavEnv, context: str):
-    attempt = 0
-    while True:
-        attempt += 1
+class WorkerError(RuntimeError):
+    """Raised when an AI2-THOR worker cannot recover cleanly."""
+
+
+def _reset_with_retries(
+    env: AI2ThorObjectNavEnv,
+    context: str,
+    max_attempts: int,
+    retry_delay_s: float,
+):
+    last_error: Optional[BaseException] = None
+    max_attempts = max(1, int(max_attempts))
+    for attempt in range(1, max_attempts + 1):
         try:
             return env.reset()
         except Exception as exc:  # noqa: BLE001
+            last_error = exc
             print(
                 f"[worker] {context} reset failed on attempt {attempt}: "
                 f"{type(exc).__name__}: {exc}",
                 flush=True,
             )
             env.close()
-            time.sleep(min(30.0, float(attempt)))
+            if attempt < max_attempts:
+                time.sleep(min(30.0, max(0.0, retry_delay_s) * float(attempt)))
+    raise WorkerError(f"{context} reset failed after {max_attempts} attempts") from last_error
 
 
-def _step_with_recovery(env: AI2ThorObjectNavEnv, action_id: int):
+def _step_with_recovery(
+    env: AI2ThorObjectNavEnv,
+    action_id: int,
+    max_reset_retries: int,
+    reset_retry_delay_s: float,
+):
     try:
         return env.step(action_id)
     except Exception as exc:  # noqa: BLE001
@@ -252,7 +269,12 @@ def _step_with_recovery(env: AI2ThorObjectNavEnv, action_id: int):
             flush=True,
         )
         env.close()
-        obs, reset_info = _reset_with_retries(env, "step recovery")
+        obs, reset_info = _reset_with_retries(
+            env,
+            "step recovery",
+            max_reset_retries,
+            reset_retry_delay_s,
+        )
         info = {
             "success": False,
             "stop_issued": False,
@@ -266,6 +288,8 @@ def _step_with_recovery(env: AI2ThorObjectNavEnv, action_id: int):
 def _worker(conn, env_kwargs):
     worker_id = int(env_kwargs.pop("worker_id", 0))
     startup_delay_s = float(env_kwargs.pop("startup_delay_s", 0.0))
+    max_reset_retries = int(env_kwargs.pop("max_reset_retries", 3))
+    reset_retry_delay_s = float(env_kwargs.pop("reset_retry_delay_s", 3.0))
     if startup_delay_s > 0:
         print(
             f"[worker {worker_id}] waiting {startup_delay_s:.1f}s before AI2-THOR startup",
@@ -276,19 +300,43 @@ def _worker(conn, env_kwargs):
     try:
         while True:
             cmd, data = conn.recv()
-            if cmd == "reset":
-                obs, info = _reset_with_retries(env, "initial")
-                conn.send((obs, info))
-            elif cmd == "step":
-                obs, reward, done, info = _step_with_recovery(env, data)
-                if done and "reset_info" not in info:
-                    final_info = info
-                    obs, reset_info = _reset_with_retries(env, "episode boundary")
-                    info = {**final_info, "reset_info": reset_info}
-                conn.send((obs, reward, done, info))
-            elif cmd == "close":
-                env.close()
-                conn.close()
+            try:
+                if cmd == "reset":
+                    obs, info = _reset_with_retries(
+                        env,
+                        "initial",
+                        max_reset_retries,
+                        reset_retry_delay_s,
+                    )
+                    conn.send(("ok", (obs, info)))
+                elif cmd == "step":
+                    obs, reward, done, info = _step_with_recovery(
+                        env,
+                        data,
+                        max_reset_retries,
+                        reset_retry_delay_s,
+                    )
+                    if done and "reset_info" not in info:
+                        final_info = info
+                        obs, reset_info = _reset_with_retries(
+                            env,
+                            "episode boundary",
+                            max_reset_retries,
+                            reset_retry_delay_s,
+                        )
+                        info = {**final_info, "reset_info": reset_info}
+                    conn.send(("ok", (obs, reward, done, info)))
+                elif cmd == "close":
+                    env.close()
+                    conn.close()
+                    return
+            except Exception as exc:  # noqa: BLE001
+                msg = f"{type(exc).__name__}: {exc}"
+                print(f"[worker {worker_id}] unrecoverable error: {msg}", flush=True)
+                try:
+                    conn.send(("error", msg))
+                except Exception:
+                    pass
                 return
     except (EOFError, KeyboardInterrupt):
         pass
@@ -303,8 +351,13 @@ class SubprocVecEnv:
     so the rollout loop never sees a "padding" timestep.
     """
 
-    def __init__(self, env_kwargs_list: List[Dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        env_kwargs_list: List[Dict[str, Any]],
+        response_timeout_s: float = 900.0,
+    ) -> None:
         self.n = len(env_kwargs_list)
+        self.response_timeout_s = max(1.0, float(response_timeout_s))
         self._parents: List = []
         self._procs: List[Process] = []
         for env_kwargs in env_kwargs_list:
@@ -315,10 +368,41 @@ class SubprocVecEnv:
             self._parents.append(parent)
             self._procs.append(p)
 
+    def _stop_process(self, proc: Process) -> None:
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=5)
+        if proc.is_alive():
+            try:
+                proc.kill()
+            except AttributeError:
+                proc.terminate()
+            proc.join(timeout=2)
+
+    def _recv_result(self, idx: int, context: str):
+        parent = self._parents[idx]
+        proc = self._procs[idx]
+        if not parent.poll(self.response_timeout_s):
+            self._stop_process(proc)
+            raise WorkerError(
+                f"{context}: worker {idx} timed out after "
+                f"{self.response_timeout_s:.0f}s"
+            )
+        try:
+            status, payload = parent.recv()
+        except EOFError as exc:
+            raise WorkerError(f"{context}: worker {idx} exited before replying") from exc
+        if status == "error":
+            self._stop_process(proc)
+            raise WorkerError(f"{context}: worker {idx} failed: {payload}")
+        if status != "ok":
+            raise WorkerError(f"{context}: worker {idx} sent unknown status {status!r}")
+        return payload
+
     def reset(self) -> Tuple[List[Dict[str, np.ndarray]], List[Dict[str, Any]]]:
         for p in self._parents:
             p.send(("reset", None))
-        results = [p.recv() for p in self._parents]
+        results = [self._recv_result(i, "reset") for i in range(self.n)]
         obs = [r[0] for r in results]
         info = [r[1] for r in results]
         return obs, info
@@ -326,7 +410,7 @@ class SubprocVecEnv:
     def step(self, actions: np.ndarray):
         for p, a in zip(self._parents, actions):
             p.send(("step", int(a)))
-        results = [p.recv() for p in self._parents]
+        results = [self._recv_result(i, "step") for i in range(self.n)]
         obs = [r[0] for r in results]
         rewards = np.array([r[1] for r in results], dtype=np.float32)
         dones = np.array([r[2] for r in results], dtype=np.bool_)
@@ -341,8 +425,12 @@ class SubprocVecEnv:
                 pass
         for proc in self._procs:
             proc.join(timeout=5)
-            if proc.is_alive():
-                proc.terminate()
+            self._stop_process(proc)
+        for p in self._parents:
+            try:
+                p.close()
+            except Exception:
+                pass
 
 
 # --------------------------------------------------------------------------- #
@@ -450,10 +538,12 @@ class Trainer:
                 "height": 224,
                 "platform": args.platform,
                 "seed": args.seed + i,
+                "max_reset_retries": args.max_reset_retries,
+                "reset_retry_delay_s": args.reset_retry_delay,
             }
             for i in range(args.num_envs)
         ]
-        self.envs = SubprocVecEnv(env_kwargs_list)
+        self.envs = SubprocVecEnv(env_kwargs_list, response_timeout_s=args.worker_timeout)
 
         self.policy = Method1Policy(
             num_targets=len(self.targets),
@@ -494,16 +584,20 @@ class Trainer:
             print(f"[trainer] --resume set but {latest} doesn't exist; starting fresh")
 
         # Initial reset.
-        obs, _info = self.envs.reset()
+        try:
+            obs, _info = self.envs.reset()
+        except BaseException:
+            self.envs.close()
+            raise
         self._last_obs = obs
         self._hidden = initial_hidden(args.num_envs, self.device)
 
         self._stop_requested = False
-        signal.signal(signal.SIGINT, self._sig)
+        # Let Ctrl+C raise KeyboardInterrupt so it can break blocking worker waits.
         signal.signal(signal.SIGTERM, self._sig)
 
     def _sig(self, *_args) -> None:
-        print("\n[trainer] interrupt received — will save checkpoint and exit")
+        print("\n[trainer] termination requested; will save checkpoint and exit")
         self._stop_requested = True
 
     # ------------------------------------------------------------------ #
@@ -791,6 +885,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device", default="auto")
     p.add_argument("--worker-start-delay", type=float, default=5.0,
                    help="Seconds to stagger AI2-THOR worker startup. Useful on WSL/local GPUs.")
+    p.add_argument("--max-reset-retries", type=int, default=3,
+                   help="Maximum AI2-THOR reset attempts before saving and exiting.")
+    p.add_argument("--reset-retry-delay", type=float, default=3.0,
+                   help="Base seconds between AI2-THOR reset retries.")
+    p.add_argument("--worker-timeout", type=float, default=900.0,
+                   help="Seconds the trainer waits for a worker response before killing it.")
     p.add_argument("--no-pretrained", action="store_true",
                    help="Skip ImageNet-pretrained ResNet18 init.")
     p.add_argument("--resume", action="store_true", default=True,
@@ -816,13 +916,28 @@ def main() -> int:
     for k, v in vars(args).items():
         print(f"  {k}: {v}")
 
-    trainer = Trainer(args)
+    trainer: Optional[Trainer] = None
     try:
+        trainer = Trainer(args)
         trainer.train()
     except KeyboardInterrupt:
         print("\n[trainer] caught KeyboardInterrupt; saving checkpoint before exit")
-        trainer._save_checkpoint()
-        trainer.envs.close()
+        if trainer is not None:
+            trainer._save_checkpoint()
+        return 130
+    except WorkerError as exc:
+        print(f"\n[trainer] worker failed; saving checkpoint before exit: {exc}")
+        if trainer is not None:
+            trainer._save_checkpoint()
+        return 2
+    except Exception as exc:  # noqa: BLE001
+        print(f"\n[trainer] fatal error; saving checkpoint before exit: {type(exc).__name__}: {exc}")
+        if trainer is not None:
+            trainer._save_checkpoint()
+        return 1
+    finally:
+        if trainer is not None:
+            trainer.envs.close()
     return 0
 
 
