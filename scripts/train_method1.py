@@ -24,7 +24,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from multiprocessing import Pipe, Process
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import torch
@@ -74,6 +74,113 @@ SUCCESS_DISTANCE_M = 1.0
 # Environment
 # --------------------------------------------------------------------------- #
 
+def _linux_process_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "posix":
+        status = Path(f"/proc/{pid}/status")
+        if status.exists():
+            try:
+                state = next(
+                    (line for line in status.read_text(errors="replace").splitlines()
+                     if line.startswith("State:")),
+                    "",
+                )
+            except (FileNotFoundError, ProcessLookupError, PermissionError):
+                return False
+            return "\tZ" not in state
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _linux_child_pid_map() -> Dict[int, List[int]]:
+    if os.name != "posix":
+        return {}
+    proc_root = Path("/proc")
+    if not proc_root.exists():
+        return {}
+
+    children: Dict[int, List[int]] = {}
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            ppid_line = next(
+                (line for line in (entry / "status").read_text(errors="replace").splitlines()
+                 if line.startswith("PPid:")),
+                "",
+            )
+            ppid = int(ppid_line.split()[1])
+        except (FileNotFoundError, ProcessLookupError, PermissionError, IndexError, ValueError):
+            continue
+        children.setdefault(ppid, []).append(pid)
+    return children
+
+
+def _linux_descendant_pids(root_pid: int) -> List[int]:
+    children = _linux_child_pid_map()
+    descendants: List[int] = []
+    seen: Set[int] = set()
+    stack = list(children.get(root_pid, ()))
+    while stack:
+        pid = stack.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        descendants.append(pid)
+        stack.extend(children.get(pid, ()))
+    return descendants
+
+
+def _terminate_linux_process_tree(
+    root_pid: Optional[int],
+    *,
+    include_root: bool,
+    grace_s: float = 1.0,
+) -> None:
+    """Terminate a Linux/WSL process tree without touching the whole process group."""
+    if root_pid is None or os.name != "posix" or not Path("/proc").exists():
+        return
+
+    pids = _linux_descendant_pids(int(root_pid))
+    if include_root:
+        pids.append(int(root_pid))
+    unique_pids = list(dict.fromkeys(pid for pid in pids if pid > 0))
+    if not unique_pids:
+        return
+
+    for pid in unique_pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except PermissionError as exc:
+            print(f"[worker] permission denied terminating pid {pid}: {exc}", flush=True)
+
+    deadline = time.time() + max(0.0, grace_s)
+    while time.time() < deadline:
+        if not any(_linux_process_is_alive(pid) for pid in unique_pids):
+            return
+        time.sleep(0.05)
+
+    for pid in unique_pids:
+        if not _linux_process_is_alive(pid):
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except PermissionError as exc:
+            print(f"[worker] permission denied killing pid {pid}: {exc}", flush=True)
+
+
 class AI2ThorObjectNavEnv:
     """Minimal gym-style ObjectNav env on iTHOR.
 
@@ -90,6 +197,7 @@ class AI2ThorObjectNavEnv:
         height: int = 224,
         platform: str = "default",
         seed: int = 0,
+        server_timeout: float = 100.0,
     ) -> None:
         self.scenes = tuple(scenes)
         self.targets = tuple(targets)
@@ -97,6 +205,7 @@ class AI2ThorObjectNavEnv:
         self.width = width
         self.height = height
         self.platform = platform
+        self.server_timeout = float(server_timeout)
         self.rng = np.random.default_rng(seed)
         self._controller = None
         self._current_scene = ""
@@ -118,6 +227,7 @@ class AI2ThorObjectNavEnv:
             "width": self.width,
             "height": self.height,
             "renderDepthImage": True,
+            "server_timeout": self.server_timeout,
         }
         if self.platform == "cloud":
             from ai2thor.platform import CloudRendering  # type: ignore
@@ -126,12 +236,32 @@ class AI2ThorObjectNavEnv:
         self._controller = Controller(**kwargs)
 
     def close(self) -> None:
-        if self._controller is not None:
+        controller = self._controller
+        if controller is not None:
+            unity_pids = self._controller_unity_pids()
+            for pid in unity_pids:
+                _terminate_linux_process_tree(pid, include_root=True, grace_s=0.5)
             try:
-                self._controller.stop()
+                controller.stop()
             except Exception:
                 pass
+            for pid in unity_pids:
+                _terminate_linux_process_tree(pid, include_root=True, grace_s=0.5)
             self._controller = None
+
+    def _controller_unity_pids(self) -> List[int]:
+        if self._controller is None:
+            return []
+        pids: List[int] = []
+        unity_pid = getattr(self._controller, "unity_pid", None)
+        if isinstance(unity_pid, int) and unity_pid > 0:
+            pids.append(unity_pid)
+        server = getattr(self._controller, "server", None)
+        unity_proc = getattr(server, "unity_proc", None)
+        proc_pid = getattr(unity_proc, "pid", None)
+        if isinstance(proc_pid, int) and proc_pid > 0:
+            pids.append(proc_pid)
+        return list(dict.fromkeys(pids))
 
     # ----- observation ----------------------------------------------------- #
 
@@ -369,15 +499,18 @@ class SubprocVecEnv:
             self._procs.append(p)
 
     def _stop_process(self, proc: Process) -> None:
+        _terminate_linux_process_tree(proc.pid, include_root=False, grace_s=1.0)
         if proc.is_alive():
             proc.terminate()
             proc.join(timeout=5)
+        _terminate_linux_process_tree(proc.pid, include_root=False, grace_s=0.5)
         if proc.is_alive():
             try:
                 proc.kill()
             except AttributeError:
                 proc.terminate()
             proc.join(timeout=2)
+        _terminate_linux_process_tree(proc.pid, include_root=False, grace_s=0.5)
 
     def _recv_result(self, idx: int, context: str):
         parent = self._parents[idx]
@@ -538,6 +671,7 @@ class Trainer:
                 "height": 224,
                 "platform": args.platform,
                 "seed": args.seed + i,
+                "server_timeout": args.server_timeout,
                 "max_reset_retries": args.max_reset_retries,
                 "reset_retry_delay_s": args.reset_retry_delay,
             }
@@ -891,6 +1025,8 @@ def parse_args() -> argparse.Namespace:
                    help="Base seconds between AI2-THOR reset retries.")
     p.add_argument("--worker-timeout", type=float, default=900.0,
                    help="Seconds the trainer waits for a worker response before killing it.")
+    p.add_argument("--server-timeout", type=float, default=100.0,
+                   help="Seconds AI2-THOR waits for a backend response before reset recovery.")
     p.add_argument("--no-pretrained", action="store_true",
                    help="Skip ImageNet-pretrained ResNet18 init.")
     p.add_argument("--resume", action="store_true", default=True,

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "objectnav"
 version = "0.1.0"
 description = "CS 175 — AI2-THOR Object Goal Navigation: comparing end-to-end RL, classical, and LLM-guided methods."
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 readme = "CLAUDE.md"
 
 [tool.setuptools.packages.find]

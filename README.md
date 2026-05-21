@@ -132,10 +132,11 @@ frame_shape=(300, 300, 3)
 depth_shape=(300, 300)
 ```
 
-### RunPod / Lambda A100
+### Lambda Cloud / RunPod GPU
 
-For cloud training, an A100 80GB with a CUDA 12.1 Ubuntu 22.04 image is a good
-target. A PyTorch-preinstalled image saves setup time.
+For Lambda Cloud, use `Lambda Stack 22.04` when available. A single A10 24GB or
+A100 40GB is enough for this project; start with smoke tests before launching a
+long PPO run.
 
 ```bash
 nvidia-smi
@@ -156,6 +157,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements_gpu.txt --extra-index-url https://download.pytorch.org/whl/cu121
+pip install -e .
 
 xvfb-run -a python scripts/smoke_test_ai2thor.py --platform default
 ```
@@ -165,6 +167,10 @@ If the default renderer fails on a headless cloud machine, try:
 ```bash
 python scripts/smoke_test_ai2thor.py --platform cloud
 ```
+
+Use the renderer that passes the smoke test in the training commands below. On
+some cloud machines `default` works best under `xvfb-run`; on others
+`cloud`/CloudRendering is more stable.
 
 ### macOS
 
@@ -210,26 +216,73 @@ python scripts/train_method1.py \
 
 If interrupted, resume with the same command but remove `--no-resume`.
 
-### A100 / RunPod
+### Lambda A100 / RunPod
 
-The A100 configuration can use more parallel simulators:
+First run a short test:
 
 ```bash
 xvfb-run -a python scripts/train_method1.py \
+  --device cuda \
+  --platform default \
+  --total-steps 10240 \
+  --num-envs 4 \
+  --rollout-steps 128 \
+  --lr 0.0001 \
+  --max-grad-norm 0.25 \
+  --checkpoint-interval 5120 \
+  --log-interval 5120 \
+  --checkpoints-dir checkpoints/method1_lambda_test \
+  --logs-dir logs/method1_lambda_test \
+  --worker-start-delay 10 \
+  --max-reset-retries 3 \
+  --server-timeout 300 \
+  --worker-timeout 900 \
+  --no-resume
+```
+
+If the short test is stable, run the longer A100 training job:
+
+```bash
+xvfb-run -a python scripts/train_method1.py \
+  --device cuda \
+  --platform default \
   --total-steps 2000000 \
   --num-envs 4 \
   --rollout-steps 128 \
-  --platform default
+  --lr 0.0001 \
+  --max-grad-norm 0.25 \
+  --checkpoint-interval 50000 \
+  --log-interval 5000 \
+  --checkpoints-dir checkpoints/method1_lambda \
+  --logs-dir logs/method1_lambda \
+  --worker-start-delay 10 \
+  --max-reset-retries 3 \
+  --server-timeout 300 \
+  --worker-timeout 900 \
+  --no-resume
 ```
 
-Or use CloudRendering:
+If the smoke test only passes with CloudRendering, use the same commands without
+`xvfb-run -a` and change `--platform default` to `--platform cloud`:
 
 ```bash
 python scripts/train_method1.py \
+  --device cuda \
+  --platform cloud \
   --total-steps 2000000 \
   --num-envs 4 \
   --rollout-steps 128 \
-  --platform cloud
+  --lr 0.0001 \
+  --max-grad-norm 0.25 \
+  --checkpoint-interval 50000 \
+  --log-interval 5000 \
+  --checkpoints-dir checkpoints/method1_lambda_cloud \
+  --logs-dir logs/method1_lambda_cloud \
+  --worker-start-delay 10 \
+  --max-reset-retries 3 \
+  --server-timeout 300 \
+  --worker-timeout 900 \
+  --no-resume
 ```
 
 ## Monitoring
